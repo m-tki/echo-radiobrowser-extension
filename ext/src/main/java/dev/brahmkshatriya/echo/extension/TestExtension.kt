@@ -24,8 +24,8 @@ import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.Playlist
 import dev.brahmkshatriya.echo.common.models.Radio
 import dev.brahmkshatriya.echo.common.models.User
+import dev.brahmkshatriya.echo.common.settings.SettingList
 import dev.brahmkshatriya.echo.common.settings.SettingSwitch
-import dev.brahmkshatriya.echo.common.settings.SettingTextInput
 import kotlinx.serialization.SerialName
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -56,8 +56,22 @@ data class Station(
 class TestExtension : ExtensionClient, HomeFeedClient, TrackClient, RadioClient, SearchFeedClient {
     override suspend fun onExtensionSelected() {}
 
+    override suspend fun onInitialize() {
+        if (setting.getBoolean("countries_initialized") == null)  {
+            setting.putString("countries_serialized", call(countriesLink))
+            setting.putBoolean("countries_initialized", true)
+        }
+    }
+
     override val settingItems
         get() = listOf(
+            SettingList(
+                "Default Country",
+                "default_country_code",
+                "Select a default country to be displayed as the first tab on the home page",
+                setting.getString("countries_serialized")!!.toData<List<Country>>().distinctBy { it.code.lowercase() }.map { it.name },
+                setting.getString("countries_serialized")!!.toData<List<Country>>().distinctBy { it.code.lowercase() }.map { it.code }
+            ),
             SettingSwitch(
                 "Show Categories",
                 "show_categories",
@@ -69,18 +83,12 @@ class TestExtension : ExtensionClient, HomeFeedClient, TrackClient, RadioClient,
                 "resolved_url",
                 "Radio Browser offers resolved URLs for stations, this option specifies which URL to use",
                 resolvedUrl
-            ),
-            SettingTextInput(
-                "Default Country",
-                "default_country",
-                "Set a default country to be displayed as the first tab on the home page",
-                defaultCountry
             )
         )
 
+    private val defaultCountryCode get() = setting.getString("default_country_code")
     private val showCategories get() = setting.getBoolean("show_categories") ?: true
     private val resolvedUrl get() = setting.getBoolean("resolved_url") ?: false
-    private val defaultCountry get() = setting.getString("default_country")
 
     private lateinit var setting: Settings
     override fun setSettings(settings: Settings) {
@@ -159,7 +167,7 @@ class TestExtension : ExtensionClient, HomeFeedClient, TrackClient, RadioClient,
 
     override suspend fun getHomeTabs(): List<Tab> {
         val countries = call(countriesLink).toData<List<Country>>().distinctBy { it.code.lowercase() }
-        val (default, others) = countries.partition { it.name.equals(defaultCountry, true)}
+        val (default, others) = countries.partition { it.code == defaultCountryCode }
         return (default + others).map {
             Tab(title = it.name, id = it.code)
         }
