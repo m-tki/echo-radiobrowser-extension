@@ -5,8 +5,9 @@ import dev.brahmkshatriya.echo.common.clients.HomeFeedClient
 import dev.brahmkshatriya.echo.common.clients.TrackClient
 import dev.brahmkshatriya.echo.common.clients.RadioClient
 import dev.brahmkshatriya.echo.common.clients.SearchFeedClient
-import dev.brahmkshatriya.echo.common.helpers.ClientException
 import dev.brahmkshatriya.echo.common.settings.Settings
+import dev.brahmkshatriya.echo.common.settings.SettingList
+import dev.brahmkshatriya.echo.common.settings.SettingSwitch
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem.Companion.toMediaItem
 import dev.brahmkshatriya.echo.common.models.ImageHolder.Companion.toImageHolder
 import dev.brahmkshatriya.echo.common.models.Shelf
@@ -16,20 +17,19 @@ import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.common.models.QuickSearchItem
 import dev.brahmkshatriya.echo.common.models.Feed.Companion.toFeed
 import dev.brahmkshatriya.echo.common.models.Streamable.Source.Companion.toSource
-import dev.brahmkshatriya.echo.common.helpers.PagedData
-import dev.brahmkshatriya.echo.common.helpers.ContinuationCallback.Companion.await
 import dev.brahmkshatriya.echo.common.models.Album
 import dev.brahmkshatriya.echo.common.models.Artist
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.Playlist
 import dev.brahmkshatriya.echo.common.models.Radio
 import dev.brahmkshatriya.echo.common.models.User
-import dev.brahmkshatriya.echo.common.settings.SettingList
-import dev.brahmkshatriya.echo.common.settings.SettingSwitch
-import kotlinx.serialization.SerialName
+import dev.brahmkshatriya.echo.common.helpers.ClientException
+import dev.brahmkshatriya.echo.common.helpers.PagedData
+import dev.brahmkshatriya.echo.common.helpers.ContinuationCallback.Companion.await
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.json.Json
 
 @Serializable
@@ -72,6 +72,22 @@ class TestExtension : ExtensionClient, HomeFeedClient, TrackClient, RadioClient,
                 setting.getString("countries_serialized")!!.toData<List<Country>>().distinctBy { it.code.lowercase() }.map { it.name },
                 setting.getString("countries_serialized")!!.toData<List<Country>>().distinctBy { it.code.lowercase() }.map { it.code }
             ),
+            SettingList(
+                "Station Order",
+                "station_order",
+                "Select the order that list of stations will be sorted by",
+                listOf("Name", "Votes", "Clicks", "Recent Click", "Recently Changed"),
+                listOf("name", "votes", "clickcount", "clicktrend", "changetimestamp"),
+                3
+            ),
+            SettingList(
+                "Category Order",
+                "category_order",
+                "Select the order that list of categories will be sorted by",
+                listOf("Name", "Station Count"),
+                listOf("name", "stationcount"),
+                1
+            ),
             SettingSwitch(
                 "Show Categories",
                 "show_categories",
@@ -87,6 +103,8 @@ class TestExtension : ExtensionClient, HomeFeedClient, TrackClient, RadioClient,
         )
 
     private val defaultCountryCode get() = setting.getString("default_country_code")
+    private val stationOrder get() = setting.getString("station_order")
+    private val categoryOrder get() = setting.getString("category_order")
     private val showCategories get() = setting.getBoolean("show_categories") ?: true
     private val resolvedUrl get() = setting.getBoolean("resolved_url") ?: false
 
@@ -113,12 +131,27 @@ class TestExtension : ExtensionClient, HomeFeedClient, TrackClient, RadioClient,
     private fun String.toShelf(): List<Shelf> {
         val allStations = this.toData<List<Station>>()
         return if (showCategories) {
-            val tags = allStations.flatMap { it.tags.split(",") }
-                .map { it.ifEmpty { "unknown" } }
-                .distinct()
+            val tags = if (categoryOrder == "name") {
+                allStations
+                    .flatMap { it.tags.split(",") }
+                    .map { it.ifEmpty { "unknown" } }
+                    .distinct()
+                    .sorted()
+            }
+            else {
+                allStations
+                    .asSequence()
+                    .flatMap { it.tags.split(",").map { tag -> tag.ifEmpty { "unknown" } }.distinct() }
+                    .groupingBy { it }
+                    .eachCount()
+                    .entries
+                    .sortedByDescending { it.value }
+                    .map { it.key }
+            }
             tags.map { tag ->
                 Shelf.Category(
-                    title = tag,
+                    title = tag.split(" ")
+                        .joinToString(" ") { word -> word.replaceFirstChar { it.uppercaseChar() } },
                     items = PagedData.Single {
                         allStations.filter {
                             it.tags.split(",").any { subtag -> subtag == tag } ||
@@ -162,7 +195,7 @@ class TestExtension : ExtensionClient, HomeFeedClient, TrackClient, RadioClient,
     }
 
     override fun getHomeFeed(tab: Tab?) = PagedData.Single {
-        call("$stationsLink/${tab!!.id}").toShelf()
+        call("$stationsLink/${tab!!.id}?&order=$stationOrder").toShelf()
     }.toFeed()
 
     override suspend fun getHomeTabs(): List<Tab> {
