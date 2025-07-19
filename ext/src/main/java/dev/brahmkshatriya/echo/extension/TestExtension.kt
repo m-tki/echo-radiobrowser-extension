@@ -75,7 +75,7 @@ class TestExtension : ExtensionClient, HomeFeedClient, TrackClient, RadioClient,
             SettingList(
                 "Station Order",
                 "station_order",
-                "Select the order that list of stations will be sorted by",
+                "Select the order in which the station list will be sorted",
                 listOf("Name", "Votes", "Clicks", "Recent Click", "Recently Changed"),
                 listOf("name", "votes", "clickcount", "clicktrend", "changetimestamp"),
                 3
@@ -83,7 +83,7 @@ class TestExtension : ExtensionClient, HomeFeedClient, TrackClient, RadioClient,
             SettingList(
                 "Category Order",
                 "category_order",
-                "Select the order that list of categories will be sorted by",
+                "Select the order in which the category list will be sorted",
                 listOf("Name", "Station Count"),
                 listOf("name", "stationcount"),
                 1
