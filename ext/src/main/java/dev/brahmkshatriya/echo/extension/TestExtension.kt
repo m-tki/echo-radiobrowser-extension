@@ -58,27 +58,20 @@ class TestExtension : ExtensionClient, HomeFeedClient, TrackClient, RadioClient,
 
     override suspend fun onInitialize() {
         if (setting.getBoolean("countries_initialized") == null)  {
-            runCatching { setting.putString("countries_serialized", call(countriesLink)) }
-                .onFailure { return }
+            setting.putString("countries_serialized", call(countriesLink))
             setting.putBoolean("countries_initialized", true)
         }
     }
 
     override val settingItems
-        get() = listOfNotNull(
+        get() = listOf(
             SettingList(
                 "Default Country",
                 "default_country_code",
                 "Select a default country to be displayed as the first tab on the home page",
-                setting.getString("countries_serialized")
-                    ?.toData<List<Country>>()
-                    ?.distinctBy { it.code.lowercase() }?.map { it.name }
-                    ?: emptyList(),
-                setting.getString("countries_serialized")
-                    ?.toData<List<Country>>()
-                    ?.distinctBy { it.code.lowercase() }?.map { it.code }
-                    ?: emptyList()
-            ).takeUnless { setting.getBoolean("countries_initialized") == null },
+                setting.getString("countries_serialized")!!.toData<List<Country>>().distinctBy { it.code.lowercase() }.map { it.name },
+                setting.getString("countries_serialized")!!.toData<List<Country>>().distinctBy { it.code.lowercase() }.map { it.code }
+            ),
             SettingList(
                 "Station Order",
                 "station_order",
@@ -120,9 +113,9 @@ class TestExtension : ExtensionClient, HomeFeedClient, TrackClient, RadioClient,
         setting = settings
     }
 
-    private val stationsLink = "https://de2.api.radio-browser.info/json/stations/bycountrycodeexact"
-    private val countriesLink = "https://de2.api.radio-browser.info/json/countries"
-    private val searchLink = "https://de2.api.radio-browser.info/json/stations/search"
+    private val stationsLink = "https://fi1.api.radio-browser.info/json/stations/bycountrycodeexact"
+    private val countriesLink = "https://fi1.api.radio-browser.info/json/countries"
+    private val searchLink = "https://fi1.api.radio-browser.info/json/stations/search"
 
     private val client by lazy { OkHttpClient.Builder().build() }
     private suspend fun call(url: String) = client.newCall(
