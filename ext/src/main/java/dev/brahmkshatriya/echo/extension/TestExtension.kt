@@ -213,16 +213,32 @@ class TestExtension : ExtensionClient, HomeFeedClient, TrackClient, RadioClient,
         return PagedData.empty()
     }
 
+    private suspend fun parsePLS(stream: String?): String {
+        if (stream != null) {
+            val content = call(stream)
+            for (line in content.lines()) {
+                if (line.startsWith("File1=")) {
+                    return line.substring(6)
+                }
+            }
+        }
+        return ""
+    }
+
     override suspend fun loadStreamableMedia(
         streamable: Streamable,
         isDownload: Boolean
     ): Streamable.Media {
+        val source = if (streamable.id
+            .substringAfterLast('.')
+            .lowercase() == "pls") parsePLS(streamable.id)
+            else streamable.id
         val type = if (streamable.extras["hls"] == "1")
             Streamable.SourceType.HLS
         else
             Streamable.SourceType.Progressive
         return Streamable.Media.Server(
-            listOf(streamable.id.toSource(type = type)),
+            listOf(source.toSource(type = type)),
             false
         )
     }
