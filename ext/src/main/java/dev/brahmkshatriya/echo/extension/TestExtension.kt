@@ -58,20 +58,27 @@ class TestExtension : ExtensionClient, HomeFeedClient, TrackClient, RadioClient,
 
     override suspend fun onInitialize() {
         if (setting.getBoolean("countries_initialized") == null)  {
-            setting.putString("countries_serialized", call(countriesLink))
+            runCatching { setting.putString("countries_serialized", call(countriesLink)) }
+                .onFailure { return }
             setting.putBoolean("countries_initialized", true)
         }
     }
 
     override val settingItems
-        get() = listOf(
+        get() = listOfNotNull(
             SettingList(
                 "Default Country",
                 "default_country_code",
                 "Select a default country to be displayed as the first tab on the home page",
-                setting.getString("countries_serialized")!!.toData<List<Country>>().distinctBy { it.code.lowercase() }.map { it.name },
-                setting.getString("countries_serialized")!!.toData<List<Country>>().distinctBy { it.code.lowercase() }.map { it.code }
-            ),
+                setting.getString("countries_serialized")
+                    ?.toData<List<Country>>()
+                    ?.distinctBy { it.code.lowercase() }?.map { it.name }
+                    ?: emptyList(),
+                setting.getString("countries_serialized")
+                    ?.toData<List<Country>>()
+                    ?.distinctBy { it.code.lowercase() }?.map { it.code }
+                    ?: emptyList()
+            ).takeUnless { setting.getBoolean("countries_initialized") == null },
             SettingList(
                 "Station Order",
                 "station_order",
