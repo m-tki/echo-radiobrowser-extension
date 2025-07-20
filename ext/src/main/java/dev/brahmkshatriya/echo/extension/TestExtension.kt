@@ -229,9 +229,9 @@ class TestExtension : ExtensionClient, HomeFeedClient, TrackClient, RadioClient,
         streamable: Streamable,
         isDownload: Boolean
     ): Streamable.Media {
-        val source = if (streamable.id
-            .substringAfterLast('.').take(3)
-            .lowercase() == "pls") parsePLS(streamable.id)
+        val source = if (streamable.id.endsWith(".pls", true) ||
+            streamable.id.substringAfterLast('.').take(4)
+            .lowercase() == "pls?") parsePLS(streamable.id)
             else streamable.id
         val type = if (streamable.extras["hls"] == "1")
             Streamable.SourceType.HLS
