@@ -199,7 +199,10 @@ class TestExtension : ExtensionClient, HomeFeedClient, TrackClient, RadioClient,
     }.toFeed()
 
     override suspend fun getHomeTabs(): List<Tab> {
-        val countries = call(countriesLink).toData<List<Country>>().distinctBy { it.code.lowercase() }
+        val countries = call(countriesLink)
+            .toData<List<Country>>()
+            .distinctBy { it.code.lowercase() }
+            .sortedBy { it.name }
         val (default, others) = countries.partition { it.code == defaultCountryCode }
         return (default + others).map {
             Tab(title = it.name, id = it.code)
