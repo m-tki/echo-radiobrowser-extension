@@ -8,24 +8,19 @@ import dev.brahmkshatriya.echo.common.clients.SearchFeedClient
 import dev.brahmkshatriya.echo.common.settings.Settings
 import dev.brahmkshatriya.echo.common.settings.SettingList
 import dev.brahmkshatriya.echo.common.settings.SettingSwitch
-import dev.brahmkshatriya.echo.common.models.EchoMediaItem.Companion.toMediaItem
 import dev.brahmkshatriya.echo.common.models.ImageHolder.Companion.toImageHolder
 import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Streamable
-import dev.brahmkshatriya.echo.common.models.Tab
 import dev.brahmkshatriya.echo.common.models.Track
-import dev.brahmkshatriya.echo.common.models.QuickSearchItem
 import dev.brahmkshatriya.echo.common.models.Feed.Companion.toFeed
 import dev.brahmkshatriya.echo.common.models.Streamable.Source.Companion.toSource
-import dev.brahmkshatriya.echo.common.models.Album
-import dev.brahmkshatriya.echo.common.models.Artist
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
-import dev.brahmkshatriya.echo.common.models.Playlist
 import dev.brahmkshatriya.echo.common.models.Radio
-import dev.brahmkshatriya.echo.common.models.User
-import dev.brahmkshatriya.echo.common.helpers.ClientException
 import dev.brahmkshatriya.echo.common.helpers.PagedData
 import dev.brahmkshatriya.echo.common.helpers.ContinuationCallback.Companion.await
+import dev.brahmkshatriya.echo.common.models.Feed
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import kotlinx.serialization.Serializable
@@ -58,53 +53,52 @@ class TestExtension : ExtensionClient, HomeFeedClient, TrackClient, RadioClient,
 
     override suspend fun onInitialize() {
         if (setting.getBoolean("countries_initialized") == null)  {
-            setting.putString("countries_serialized", call(countriesLink))
+            setting.putString("countries_serialized", call("$getServer$countriesSubdirectory"))
             setting.putBoolean("countries_initialized", true)
         }
     }
 
-    override val settingItems
-        get() = listOf(
-            SettingList(
-                "Default Country",
-                "default_country_code",
-                "Select a default country to be displayed as the first tab on the home page",
-                setting.getString("countries_serialized")!!.toData<List<Country>>().distinctBy { it.code.lowercase() }.map { it.name },
-                setting.getString("countries_serialized")!!.toData<List<Country>>().distinctBy { it.code.lowercase() }.map { it.code }
-            ),
-            SettingList(
-                "Station Order",
-                "station_order",
-                "Select the order in which the station list will be sorted",
-                listOf("Name", "Votes", "Clicks", "Recent Click", "Recently Changed"),
-                listOf("name", "votes", "clickcount", "clicktrend", "changetimestamp"),
-                3
-            ),
-            SettingList(
-                "Category Order",
-                "category_order",
-                "Select the order in which the category list will be sorted",
-                listOf("Name", "Station Count"),
-                listOf("name", "stationcount"),
-                1
-            ),
-            SettingSwitch(
-                "Show Categories",
-                "show_categories",
-                "Whether to sort stations by category on the home page",
-                showCategories
-            ),
-            SettingSwitch(
-                "Use Resolved URLs",
-                "resolved_url",
-                "Radio Browser offers resolved URLs for stations, this option specifies which URL to use",
-                resolvedUrl
-            )
+    override suspend fun getSettingItems() = listOf(
+        SettingList(
+            "Radio Browser Server",
+            "radio_browser_server",
+            "Select which server to use",
+            listOf("Server 1", "Server 2", "Server 3"),
+            listOf(api1Link, api2Link, api3Link),
+            0
+        ),
+        SettingList(
+            "Default Country",
+            "default_country_code",
+            "Select a default country to be displayed as the first tab on the home page",
+            setting.getString("countries_serialized")!!.toData<List<Country>>().distinctBy { it.code.lowercase() }.map { it.name },
+            setting.getString("countries_serialized")!!.toData<List<Country>>().distinctBy { it.code.lowercase() }.map { it.code }
+        ),
+        SettingList(
+            "Station Order",
+            "station_order",
+            "Select the order in which the station list will be sorted",
+            listOf("Name", "Votes", "Click Count", "Click Trend", "Recently Changed"),
+            listOf("name", "votes", "clickcount", "clicktrend", "changetimestamp"),
+            3
+        ),
+        SettingSwitch(
+            "Show Categories",
+            "show_categories",
+            "Whether to sort stations by category on the home page",
+            showCategories
+        ),
+        SettingSwitch(
+            "Use Resolved URL",
+            "resolved_url",
+            "Radio Browser offers resolved URL for each station, this option specifies which URL to use",
+            resolvedUrl
         )
+    )
 
+    private val getServer get() = setting.getString("radio_browser_server") ?: api1Link
     private val defaultCountryCode get() = setting.getString("default_country_code")
     private val stationOrder get() = setting.getString("station_order")
-    private val categoryOrder get() = setting.getString("category_order")
     private val showCategories get() = setting.getBoolean("show_categories") ?: true
     private val resolvedUrl get() = setting.getBoolean("resolved_url") ?: false
 
@@ -113,14 +107,19 @@ class TestExtension : ExtensionClient, HomeFeedClient, TrackClient, RadioClient,
         setting = settings
     }
 
-    private val stationsLink = "https://fi1.api.radio-browser.info/json/stations/bycountrycodeexact"
-    private val countriesLink = "https://fi1.api.radio-browser.info/json/countries"
-    private val searchLink = "https://fi1.api.radio-browser.info/json/stations/search"
+    private val api1Link = "https://fi1.api.radio-browser.info"
+    private val api2Link = "https://de2.api.radio-browser.info"
+    private val api3Link = "https://de1.api.radio-browser.info"
+    private val stationsSubdirectory = "/json/stations/bycountrycodeexact"
+    private val countriesSubdirectory = "/json/countries"
+    private val searchSubdirectory = "/json/stations/search"
 
     private val client by lazy { OkHttpClient.Builder().build() }
-    private suspend fun call(url: String) = client.newCall(
-        Request.Builder().url(url).build()
-    ).await().body.string()
+    private suspend fun call(url: String): String = withContext(Dispatchers.IO) {
+        client.newCall(
+            Request.Builder().url(url).build()
+        ).await().body.string()
+    }
 
     private val json by lazy { Json { ignoreUnknownKeys = true } }
     private inline fun <reified T> String.toData() =
@@ -128,90 +127,98 @@ class TestExtension : ExtensionClient, HomeFeedClient, TrackClient, RadioClient,
             throw IllegalStateException("Failed to parse JSON: $this", it)
         }
 
+    private fun getTrack(station: Station): Shelf =
+        Track(
+            id = station.id,
+            title = station.name,
+            cover = station.favicon.toImageHolder(),
+            streamables = listOf(
+                Streamable.server(
+                    if (resolvedUrl) station.urlResolved else station.url,
+                    0,
+                    if (station.bitrate != 0) "${station.bitrate} kbps" else null,
+                    mapOf("hls" to station.hls.toString())
+                )
+            )
+        ).toShelf()
+
+    private fun getTagStations(stations: List<Station>, tag: String): List<Shelf> =
+        stations.filter {
+            it.tags.split(",").any { subtag -> subtag == tag } ||
+                    (it.tags.isEmpty() && tag == "unknown")
+        }.map {
+            getTrack(it)
+        }
+
     private fun String.toShelf(): List<Shelf> {
         val allStations = this.toData<List<Station>>()
         return if (showCategories) {
-            val tags = if (categoryOrder == "name") {
-                allStations
-                    .flatMap { it.tags.split(",") }
-                    .map { it.ifEmpty { "unknown" } }
-                    .distinct()
-                    .sorted()
-            }
-            else {
-                allStations
-                    .asSequence()
-                    .flatMap { it.tags.split(",").map { tag -> tag.ifEmpty { "unknown" } }.distinct() }
-                    .groupingBy { it }
-                    .eachCount()
-                    .entries
-                    .sortedByDescending { it.value }
-                    .map { it.key }
-            }
-            tags.map { tag ->
-                Shelf.Category(
-                    title = tag.split(" ")
-                        .joinToString(" ") { word -> word.replaceFirstChar { it.uppercaseChar() } },
-                    items = PagedData.Single {
-                        allStations.filter {
-                            it.tags.split(",").any { subtag -> subtag == tag } ||
-                                    (it.tags.isEmpty() && tag == "unknown")
-                        }.map {
-                            Track(
-                                id = it.id,
-                                title = it.name,
-                                cover = it.favicon.toImageHolder(),
-                                streamables = listOf(
-                                    Streamable.server(
-                                        if (resolvedUrl) it.urlResolved else it.url,
-                                        0,
-                                        if (it.bitrate != 0) "${it.bitrate} kbps" else null,
-                                        mapOf("hls" to it.hls.toString())
-                                    )
-                                )
-                            ).toMediaItem().toShelf()
-                        }
-                    }
+            val tags = allStations
+                .asSequence()
+                .flatMap { it.tags.split(",").map { tag -> tag.ifEmpty { "unknown" } }.distinct() }
+                .groupingBy { it }
+                .eachCount()
+                .entries
+                .sortedByDescending { it.value }
+                .map { it.key }
+            listOf(
+                Shelf.Lists.Categories(
+                    "categories",
+                    "Categories",
+                    tags.map { tag ->
+                        Shelf.Category(
+                            tag.replace(" ", "_"),
+                            tag.split(" ")
+                                .joinToString(" ") { word -> word.replaceFirstChar { it.uppercaseChar() } },
+                            PagedData.Single {
+                                getTagStations(allStations, tag)
+                            }.toFeed()
+                        )
+                    },
+                    type = Shelf.Lists.Type.Grid
                 )
-            }
+            )
         }
         else {
             allStations.map {
-                Track(
-                    id = it.id,
-                    title = it.name,
-                    cover = it.favicon.toImageHolder(),
-                    streamables = listOf(
-                        Streamable.server(
-                            if (resolvedUrl) it.urlResolved else it.url,
-                            0,
-                            if (it.bitrate != 0) "${it.bitrate} kbps" else null,
-                            mapOf("hls" to it.hls.toString())
-                        )
-                    )
-                ).toMediaItem().toShelf()
+                getTrack(it)
             }
         }
     }
 
-    override fun getHomeFeed(tab: Tab?) = PagedData.Single {
-        call("$stationsLink/${tab!!.id}?&order=$stationOrder").toShelf()
-    }.toFeed()
+    private suspend fun getStations(code: String): List<Shelf> =
+        call("$getServer$stationsSubdirectory/$code?order=$stationOrder").toShelf()
 
-    override suspend fun getHomeTabs(): List<Tab> {
-        val countries = call(countriesLink)
+    override suspend fun loadHomeFeed(): Feed<Shelf> {
+        val countries = call("$getServer$countriesSubdirectory")
             .toData<List<Country>>()
             .distinctBy { it.code.lowercase() }
             .sortedBy { it.name }
         val (default, others) = countries.partition { it.code == defaultCountryCode }
-        return (default + others).map {
-            Tab(title = it.name, id = it.code)
-        }
+        return listOf(
+            Shelf.Lists.Categories(
+                "countries",
+                "Countries",
+                (default + others).map {
+                    Shelf.Category(
+                        it.code,
+                        it.name,
+                        PagedData.Single {
+                            getStations(it.code)
+                        }.toFeed()
+                    )
+                },
+                type = Shelf.Lists.Type.Grid
+            )
+        ).toFeed()
     }
 
-    override fun getShelves(track: Track): PagedData<Shelf> {
-        return PagedData.empty()
-    }
+    override suspend fun loadFeed(track: Track): Feed<Shelf>? = null
+
+    private fun urlPlsExtension(url: String) =
+        url.endsWith(".pls", true) ||
+                url.substringAfterLast('.').take(4)
+                    .equals("pls?", true)
 
     private suspend fun parsePLS(stream: String?): String {
         if (stream != null) {
@@ -229,56 +236,27 @@ class TestExtension : ExtensionClient, HomeFeedClient, TrackClient, RadioClient,
         streamable: Streamable,
         isDownload: Boolean
     ): Streamable.Media {
-        val source = if (streamable.id.endsWith(".pls", true) ||
-            streamable.id.substringAfterLast('.').take(4)
-            .lowercase() == "pls?") parsePLS(streamable.id)
-            else streamable.id
+        val source = if (urlPlsExtension(streamable.id))
+            parsePLS(streamable.id) else streamable.id
         val type = if (streamable.extras["hls"] == "1")
-            Streamable.SourceType.HLS
-        else
-            Streamable.SourceType.Progressive
+            Streamable.SourceType.HLS else Streamable.SourceType.Progressive
         return Streamable.Media.Server(
-            listOf(source.toSource(type = type)),
+            listOf(source.toSource(type = type, isLive = true)),
             false
         )
     }
 
-    override suspend fun loadTrack(track: Track) = track
-    override fun loadTracks(radio: Radio) = PagedData.empty<Track>()
-    override suspend fun radio(track: Track, context: EchoMediaItem?) = Radio("", "")
-    override suspend fun radio(album: Album) = throw ClientException.NotSupported("Album radio")
-    override suspend fun radio(artist: Artist) = throw ClientException.NotSupported("Artist radio")
-    override suspend fun radio(user: User) = throw ClientException.NotSupported("User radio")
-    override suspend fun radio(playlist: Playlist) =
-        throw ClientException.NotSupported("Playlist radio")
+    override suspend fun loadTrack(track: Track, isDownload: Boolean): Track = track
+    override suspend fun loadTracks(radio: Radio): Feed<Track> = PagedData.empty<Track>().toFeed()
+    override suspend fun loadRadio(radio: Radio): Radio  = Radio("", "")
+    override suspend fun radio(item: EchoMediaItem, context: EchoMediaItem?): Radio = Radio("", "")
 
-    override suspend fun deleteQuickSearch(item: QuickSearchItem) {}
-    override suspend fun quickSearch(query: String): List<QuickSearchItem> {
-        return emptyList()
-    }
-
-    private fun String.toSearchShelf(query: String): List<Shelf> {
+    private fun String.toSearchShelf(): List<Shelf> {
         return this.toData<List<Station>>().map {
-            Track(
-                id = it.id,
-                title = it.name,
-                cover = it.favicon.toImageHolder(),
-                streamables = listOf(
-                    Streamable.server(
-                        if (resolvedUrl) it.urlResolved else it.url,
-                        0,
-                        if (it.bitrate != 0) "${it.bitrate} kbps" else null,
-                        mapOf("hls" to it.hls.toString())
-                    )
-                )
-            ).toMediaItem().toShelf()
+            getTrack(it)
         }
     }
 
-    override fun searchFeed(query: String, tab: Tab?) =
-        PagedData.Single {
-            call("$searchLink?&name=$query&limit=100").toSearchShelf(query)
-        }.toFeed()
-
-    override suspend fun searchTabs(query: String) = emptyList<Tab>()
+    override suspend fun loadSearchFeed(query: String): Feed<Shelf> =
+        call("$getServer$searchSubdirectory?name=$query&limit=100").toSearchShelf().toFeed()
 }
