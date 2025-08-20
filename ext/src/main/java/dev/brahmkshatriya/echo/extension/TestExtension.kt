@@ -39,13 +39,14 @@ data class Station(
     @SerialName("stationuuid")
     val id: String,
     val name: String,
-    val url: String,
     @SerialName("url_resolved")
     val urlResolved: String,
     val favicon: String,
     val tags: String,
     val bitrate: Int,
     val hls: Int,
+    @SerialName("lastcheckok")
+    val lastCheckOk: Int,
 )
 
 class TestExtension : ExtensionClient, HomeFeedClient, TrackClient, RadioClient, SearchFeedClient {
@@ -87,12 +88,6 @@ class TestExtension : ExtensionClient, HomeFeedClient, TrackClient, RadioClient,
             "show_categories",
             "Whether to sort stations by category on the home page",
             showCategories
-        ),
-        SettingSwitch(
-            "Use Resolved URL",
-            "resolved_url",
-            "Radio Browser offers resolved URL for each station, this option specifies which URL to use",
-            resolvedUrl
         )
     )
 
@@ -100,7 +95,6 @@ class TestExtension : ExtensionClient, HomeFeedClient, TrackClient, RadioClient,
     private val defaultCountryCode get() = setting.getString("default_country_code")
     private val stationOrder get() = setting.getString("station_order")
     private val showCategories get() = setting.getBoolean("show_categories") ?: true
-    private val resolvedUrl get() = setting.getBoolean("resolved_url") ?: false
 
     private lateinit var setting: Settings
     override fun setSettings(settings: Settings) {
@@ -129,12 +123,13 @@ class TestExtension : ExtensionClient, HomeFeedClient, TrackClient, RadioClient,
 
     private fun getTrack(station: Station): Shelf =
         Track(
-            id = station.id,
-            title = station.name,
+            station.id,
+            station.name,
             cover = station.favicon.toImageHolder(),
+            subtitle = if (station.lastCheckOk == 0) "Last Check: Offline" else null,
             streamables = listOf(
                 Streamable.server(
-                    if (resolvedUrl) station.urlResolved else station.url,
+                    station.urlResolved,
                     0,
                     if (station.bitrate != 0) "${station.bitrate} kbps" else null,
                     mapOf("hls" to station.hls.toString())
@@ -215,33 +210,14 @@ class TestExtension : ExtensionClient, HomeFeedClient, TrackClient, RadioClient,
 
     override suspend fun loadFeed(track: Track): Feed<Shelf>? = null
 
-    private fun urlPlsExtension(url: String) =
-        url.endsWith(".pls", true) ||
-                url.substringAfterLast('.').take(4)
-                    .equals("pls?", true)
-
-    private suspend fun parsePLS(stream: String?): String {
-        if (stream != null) {
-            val content = call(stream)
-            for (line in content.lines()) {
-                if (line.startsWith("File1=")) {
-                    return line.substring(6)
-                }
-            }
-        }
-        return ""
-    }
-
     override suspend fun loadStreamableMedia(
         streamable: Streamable,
         isDownload: Boolean
     ): Streamable.Media {
-        val source = if (urlPlsExtension(streamable.id))
-            parsePLS(streamable.id) else streamable.id
         val type = if (streamable.extras["hls"] == "1")
             Streamable.SourceType.HLS else Streamable.SourceType.Progressive
         return Streamable.Media.Server(
-            listOf(source.toSource(type = type, isLive = true)),
+            listOf(streamable.id.toSource(type = type, isLive = true)),
             false
         )
     }
