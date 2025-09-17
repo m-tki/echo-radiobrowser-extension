@@ -205,7 +205,7 @@ class TestExtension : ExtensionClient, HomeFeedClient, TrackClient, RadioClient,
                 },
                 type = Shelf.Lists.Type.Grid
             )
-        ).toFeed()
+        ).toFeed(Feed.Buttons())
     }
 
     override suspend fun loadFeed(track: Track): Feed<Shelf>? = null
